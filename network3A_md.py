@@ -37,7 +37,7 @@ import theano
 import theano.tensor as T
 from theano.tensor.nnet import conv
 from theano.tensor.nnet import softmax
-#from theano.tensor import shared_randomstreams
+from theano.tensor import shared_randomstreams
 from theano.tensor.signal.pool import pool_2d
 
 # Activation functions for neurons
@@ -94,13 +94,14 @@ class Network():
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
-        init_layer.set_connection(self.x, self.mini_batch_size)
+        init_layer.set_connection(self.x, self.x, self.mini_batch_size)
         for j in range(1, len(self.layers)): # xrange() was renamed to range() in Python 3.
             prev_layer, layer  = self.layers[j-1], self.layers[j]
             layer.set_connection(
-                prev_layer.output, self.mini_batch_size)
+                prev_layer.output, prev_layer.output_dropout ,self.mini_batch_size)
         self.output = self.layers[-1].output
-
+        self.output_dropout = self.layers[-1].output_dropout
+    
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
         """Train the network using mini-batch stochastic gradient descent."""
@@ -122,10 +123,10 @@ class Network():
                    for v, grad in zip(self.v, grads)]
 
         updates2 = [(param, param + self.u * v - eta*grad )
-                   for param, v in zip(self.params, self.v)]
+                   for param, v, grad in zip(self.params, self.v, grads)]
 
-        updates3 = [(param, param-eta*grad)
-                   for param, grad in zip(self.params, grads)]
+        # updates3 = [(param, param-eta*grad)
+        #            for param, grad in zip(self.params, grads)]
 
         updates = updates1 + updates2
         # define functions to train a mini-batch, and to compute the
@@ -154,9 +155,9 @@ class Network():
         best_accuracy = 0.0
         for epoch in range(epochs):
             for minibatch_index in range(num_training_batches):
-                b = T.cast(0.4,"float32")
-                train_mb(minibatch_index, 0.0)
-                train_m(minibatch_index)
+                gamma = 0.05
+                train_mb(minibatch_index, gamma)
+                #train_m(minibatch_index)
             if test_data:                    
                 test_accuracy = np.mean(
                         [test_mb_accuracy(j) for j in range(num_test_batches)])
@@ -175,12 +176,11 @@ class Network():
 #### Define layer types
 
 class FullyConnectedLayer():
-
-    def __init__(self, n_in, n_out, activation_fn=sigmoid):
+    def __init__(self, n_in, n_out, p_dropout, activation_fn=sigmoid):
         self.n_in = n_in
         self.n_out = n_out
         self.activation_fn = activation_fn
-        
+        self.p_dropout = p_dropout
         # Initialize weights and biases
         self.v_w = theano.shared(
             np.asarray(
@@ -205,17 +205,27 @@ class FullyConnectedLayer():
         self.params = [self.w, self.b]
         self.v = [self.v_w, self.v_b]
 
-    def set_connection(self, inpt, mini_batch_size):
+    def set_connection(self, inpt, inpt_dropout, mini_batch_size):
         # from input to output
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
-                        T.dot(self.inpt, self.w) + self.b)
+                        (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
+
+        w = self.w * np.random.binomial(1, 1-self.p_dropout, self.w.get_value().shape)
+        self.inpt_dropout = inpt_dropout.reshape((mini_batch_size, self.n_in) )
+        self.output_dropout = self.activation_fn(
+                        T.dot(self.inpt_dropout, w) + self.b)
+        # self.y_out = T.argmax(self.output, axis=1)
+        
+        # self.inpt_dropout = dropout_layer(inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
+        # self.output_dropout = self.activation_fn
 
 class SoftmaxLayer():
 
-    def __init__(self, n_in, n_out):
+    def __init__(self, n_in, n_out, p_dropout):
         self.n_in = n_in
         self.n_out = n_out
+        self.p_dropout = p_dropout
         # Initialize weights and biases
         self.v_w = theano.shared(
             np.asarray(
@@ -237,16 +247,22 @@ class SoftmaxLayer():
         self.params = [self.w, self.b]
         self.v = [self.v_w, self.v_b]
 
-    def set_connection(self, inpt, mini_batch_size):
+    def set_connection(self, inpt,inpt_dropout, mini_batch_size):
         # from input to output
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = softmax(T.dot(self.inpt, self.w) + self.b)
+        self.output = softmax( (1-self.p_dropout) * T.dot(self.inpt, self.w) + self.b)
         self.y_out = T.argmax(self.output, axis=1)
+
+        w = self.w * np.random.binomial(1, 1-self.p_dropout, self.w.get_value().shape)
+        self.inpt_dropout = inpt_dropout.reshape((mini_batch_size, self.n_in) )
+        self.output_dropout = softmax(
+                        T.dot(self.inpt_dropout, w) + self.b)
+        self.y_out_dropout = T.argmax(self.output_dropout, axis=1)
 
     # The following two methods are required as Last Layer of “net”:
     def cost(self, net):
         "Return the log-likelihood cost."
-        return -T.mean(T.log(self.output)[T.arange(net.y.shape[0]), net.y])
+        return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
 
     def accuracy(self, y):
         "Return the accuracy for the mini-batch."
@@ -309,3 +325,11 @@ class ConvPoolLayer():
 def size(data):
     "Return the size of the dataset `data`."
     return data[0].get_value(borrow=True).shape[0]
+
+
+def dropout_layer(layer, p_dropout):
+    srng = shared_randomstreams.RandomStreams(
+            np.random.RandomState(0).randint(999999)
+        )
+    mask = srng.binomial(n=1,p=1-p_dropout, size=layer.shape)
+    return layer * T.cast(mask, theano.config.floatX)
