@@ -61,7 +61,9 @@ import network3A_md
 from network3A_md import Network, FullyConnectedLayer, SoftmaxLayer 
 # softmax plus log-likelihood cost is more common in modern image classification networks.
 
-P_dropout = 0.2
+P_dropout = 0.5
+gamma = 0.05
+learning_rate = 0.1
 net = Network([
     FullyConnectedLayer(n_in=3*32*32, n_out=400, p_dropout = P_dropout),
     FullyConnectedLayer(n_in=400, n_out=100, p_dropout = P_dropout),
@@ -70,7 +72,7 @@ net = Network([
     # Last layer must be SoftmaxLayer because the cost function
     # and y_out are defined only in this layer.
 
-net.SGD(train_data, 30, batch_size, 0.1, vali_data, test_data, lmbda=0.05)
+net.SGD(train_data, 30,gamma, batch_size, learning_rate, vali_data, test_data, lmbda=0.05)
 
 print("run time: %s seconds" % (time.time() - start_time))
     

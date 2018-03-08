@@ -102,7 +102,7 @@ class Network():
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
     
-    def SGD(self, training_data, epochs, mini_batch_size, eta,
+    def SGD(self, training_data, epochs, gamma, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
         """Train the network using mini-batch stochastic gradient descent."""
         training_x, training_y = training_data
@@ -142,6 +142,16 @@ class Network():
             },allow_input_downcast=True)
         #train_m = theano.function([i],i,updates=updates2)
 
+
+        train_mb_accuracy = theano.function(
+            [i], self.layers[-1].accuracy(self.y),
+            givens={
+                self.x: 
+                training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                self.y: 
+                training_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
+
         test_mb_accuracy = theano.function(
             [i], self.layers[-1].accuracy(self.y),
             givens={
@@ -152,12 +162,21 @@ class Network():
             })
 
         # Do the actual training
+        best_accuracy_train = 0.0
         best_accuracy = 0.0
         for epoch in range(epochs):
             for minibatch_index in range(num_training_batches):
-                gamma = 0.05
                 train_mb(minibatch_index, gamma)
                 #train_m(minibatch_index)
+            if training_data:                    
+                train_accuracy = np.mean(
+                        [train_mb_accuracy(j) for j in range(num_test_batches)])
+                print("Epoch {0}: training accuracy {1:.2%}".format(
+                        epoch, train_accuracy))
+                if train_accuracy > best_accuracy_train:
+                    print("This is the best training accuracy so far.")
+                    best_accuracy_train = train_accuracy
+                    best_iteration = epoch
             if test_data:                    
                 test_accuracy = np.mean(
                         [test_mb_accuracy(j) for j in range(num_test_batches)])
