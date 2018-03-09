@@ -39,7 +39,7 @@ from theano.tensor.nnet import conv
 from theano.tensor.nnet import softmax
 from theano.tensor import shared_randomstreams
 from theano.tensor.signal.pool import pool_2d
-
+import time
 # Activation functions for neurons
 def linear(z): return z
 def ReLU(z): return T.maximum(0.0, z)
@@ -165,6 +165,7 @@ class Network():
         best_accuracy_train = 0.0
         best_accuracy = 0.0
         for epoch in range(epochs):
+            starttime = time.time()
             for minibatch_index in range(num_training_batches):
                 train_mb(minibatch_index, gamma)
                 #train_m(minibatch_index)
@@ -186,7 +187,7 @@ class Network():
                     print("This is the best test accuracy so far.")
                     best_accuracy = test_accuracy
                     best_iteration = epoch
-                        
+            print("Running Time for this epoch %f s" % (time.time()-starttime))            
         # print("Finished training network.")
         print("Best test accuracy of {0:.2%} obtained at Epoch {1}".format(
             best_accuracy, best_iteration))
@@ -228,7 +229,7 @@ class FullyConnectedLayer():
         # from input to output
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
-                        (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
+                       (1- self.p_dropout) * (T.dot(self.inpt, self.w) + self.b) )
 
         w = self.w * np.random.binomial(1, 1-self.p_dropout, self.w.get_value().shape)
         self.inpt_dropout = inpt_dropout.reshape((mini_batch_size, self.n_in) )
@@ -269,7 +270,7 @@ class SoftmaxLayer():
     def set_connection(self, inpt,inpt_dropout, mini_batch_size):
         # from input to output
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = softmax( (1-self.p_dropout) * T.dot(self.inpt, self.w) + self.b)
+        self.output = softmax( (1-self.p_dropout) * (T.dot(self.inpt, self.w) + self.b) )
         self.y_out = T.argmax(self.output, axis=1)
 
         w = self.w * np.random.binomial(1, 1-self.p_dropout, self.w.get_value().shape)
@@ -344,11 +345,3 @@ class ConvPoolLayer():
 def size(data):
     "Return the size of the dataset `data`."
     return data[0].get_value(borrow=True).shape[0]
-
-
-def dropout_layer(layer, p_dropout):
-    srng = shared_randomstreams.RandomStreams(
-            np.random.RandomState(0).randint(999999)
-        )
-    mask = srng.binomial(n=1,p=1-p_dropout, size=layer.shape)
-    return layer * T.cast(mask, theano.config.floatX)

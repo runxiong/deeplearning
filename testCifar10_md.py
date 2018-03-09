@@ -61,9 +61,9 @@ import network3A_md
 from network3A_md import Network, FullyConnectedLayer, SoftmaxLayer 
 # softmax plus log-likelihood cost is more common in modern image classification networks.
 
-P_dropout = 0.5
-gamma = 0.05
-learning_rate = 0.1
+P_dropout = 0.2
+gamma = 0
+learning_rate = 0.05
 net = Network([
     FullyConnectedLayer(n_in=3*32*32, n_out=400, p_dropout = P_dropout),
     FullyConnectedLayer(n_in=400, n_out=100, p_dropout = P_dropout),
